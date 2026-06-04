@@ -7,6 +7,8 @@ Supports both ultrasonic sensors and LPR (License Plate Recognition) camera feed
 import asyncio
 import json
 import logging
+import os
+import time
 from datetime import datetime, timezone
 import httpx
 from typing import Dict, Optional
@@ -16,11 +18,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configuration
-MQTT_BROKER = "localhost"
-MQTT_PORT = 1883
-MQTT_USER = "parking_user"
-MQTT_PASSWORD = "parking_pass"
-API_BASE_URL = "http://localhost:8000"
+MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
+MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+MQTT_USER = os.getenv("MQTT_USER", "parking_user")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "parking_pass")
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 # MQTT topic structure: parking/lot/{lot_id}/{sensor_type}
 # sensor_type: ultrasonic, lpr_entry, lpr_exit, occupancy_estimate
@@ -38,7 +40,10 @@ class SensorIngestionService:
         self.broker = broker
         self.port = port
         self.api_url = api_url
-        self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
+        if hasattr(mqtt, "CallbackAPIVersion"):
+            self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
+        else:
+            self.client = mqtt.Client()
         self.http_client = httpx.AsyncClient()
         
         # Set up callbacks
@@ -197,21 +202,22 @@ class SensorIngestionService:
     
     def start(self):
         """Connect to MQTT broker and start listening"""
-        try:
-            logger.info("Starting MQTT ingestion service...")
-            
-            # Set username/password if provided
-            if MQTT_USER and MQTT_PASSWORD:
-                self.client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
-            
-            # Connect to broker
-            self.client.connect(self.broker, self.port, keepalive=60)
-            
-            # Start the client loop
-            self.client.loop_forever()
-        
-        except Exception as e:
-            logger.error(f"Failed to start ingestion service: {e}")
+        logger.info("Starting MQTT ingestion service...")
+
+        # Set username/password if provided
+        if MQTT_USER and MQTT_PASSWORD:
+            self.client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
+
+        while True:
+            try:
+                self.client.connect(self.broker, self.port, keepalive=60)
+                self.client.loop_forever()
+            except KeyboardInterrupt:
+                raise
+            except Exception as e:
+                logger.error(f"Failed to start ingestion service: {e}")
+                logger.info("Retrying MQTT connection in 5 seconds...")
+                time.sleep(5)
     
     async def stop(self):
         """Stop the service"""

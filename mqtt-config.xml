@@ -1,27 +1,19 @@
-<?xml version="1.0" encoding="UTF-8" ?>
-<config>
-    <enterprise>
-        <enabled>false</enabled>
-    </enterprise>
-    <mqtt>
+<?xml version="1.0"?>
+<hivemq xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="config.xsd">
+    <listeners>
+        <tcp-listener>
+            <port>1883</port>
+            <bind-address>0.0.0.0</bind-address>
+        </tcp-listener>
+    </listeners>
+
+    <control-center>
         <listeners>
-            <tcp>
-                <port>1883</port>
+            <http>
+                <port>8080</port>
                 <bind-address>0.0.0.0</bind-address>
-            </tcp>
+            </http>
         </listeners>
-        <security>
-            <default-permission-level>ALL</default-permission-level>
-        </security>
-    </mqtt>
-    <restrictions>
-        <max-client-id-length>65536</max-client-id-length>
-        <max-connections>10000</max-connections>
-        <max-keep-alive>60</max-keep-alive>
-    </restrictions>
-    <persistence>
-        <enabled>true</enabled>
-        <store-queue-messages-while-disconnected>true</store-queue-messages-while-disconnected>
-        <max-retained-messages>1000</max-retained-messages>
-    </persistence>
-</config>
+    </control-center>
+</hivemq>

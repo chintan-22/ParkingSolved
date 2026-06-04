@@ -409,15 +409,15 @@ async def create_lot(lot: ParkingLotCreate, db: Session = Depends(get_db)):
 @app.post("/events")
 async def record_occupancy_event(event: OccupancyEventRequest, db: Session = Depends(get_db)):
     """Record entry/exit event from sensors"""
-    manager = OccupancyManager(redis_client, db)
+    occupancy_manager = OccupancyManager(redis_client, db)
     
     try:
-        await manager.record_event(event.lot_id, event.event_type)
+        await occupancy_manager.record_event(event.lot_id, event.event_type)
         
         # Get updated lot info and broadcast
         lot = db.query(ParkingLot).filter(ParkingLot.id == event.lot_id).first()
-        occupied = await manager.get_lot_occupancy(event.lot_id)
-        status_info = await manager.get_lot_status(lot, occupied)
+        occupied = await occupancy_manager.get_lot_occupancy(event.lot_id)
+        status_info = await occupancy_manager.get_lot_status(lot, occupied)
         
         # Broadcast to WebSocket clients
         await manager.broadcast({
@@ -445,9 +445,9 @@ async def set_occupancy(lot_id: int, occupied_count: int = Query(...), db: Sessi
     if occupied_count < 0 or occupied_count > lot.total_capacity:
         raise HTTPException(status_code=400, detail="Invalid occupancy count")
     
-    manager = OccupancyManager(redis_client, db)
-    await manager.set_lot_occupancy(lot_id, occupied_count)
-    status_info = await manager.get_lot_status(lot, occupied_count)
+    occupancy_manager = OccupancyManager(redis_client, db)
+    await occupancy_manager.set_lot_occupancy(lot_id, occupied_count)
+    status_info = await occupancy_manager.get_lot_status(lot, occupied_count)
     
     # Broadcast update
     await manager.broadcast({

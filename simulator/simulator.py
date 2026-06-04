@@ -7,6 +7,7 @@ Sends events to the backend API and optionally via MQTT.
 import asyncio
 import random
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Dict, List
 import httpx
@@ -16,7 +17,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configuration
-API_BASE_URL = "http://localhost:8000"
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 SIMULATION_SPEED = 1.0  # Multiplier for time progression (e.g., 10 = 10x faster)
 
 # Time-based occupancy patterns (percentage occupied)
