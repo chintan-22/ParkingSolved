@@ -1,624 +1,569 @@
-# ParkingSolved - Smart Parking Availability System
+# ParkingSolved
 
-A real-time parking availability overlay for Google Maps focused on pier/beach parking lots. Starting with **Manhattan Beach Pier, CA**, this system displays live parking data with color-coded availability status on an interactive map.
+ParkingSolved is a smart parking availability prototype. It combines a map-based user interface, destination search, nearby parking discovery, estimated parking availability, and a sensor-ready backend for live occupancy updates.
 
-![Status: Active Development](https://img.shields.io/badge/status-active%20development-blue)
-![License: MIT](https://img.shields.io/badge/license-MIT-green)
+The current frontend uses **MapLibre GL JS** with **OpenFreeMap** tiles, so it does not require a Google Maps API key. Destination search uses OpenStreetMap/Nominatim, and nearby parking discovery uses OpenStreetMap/Overpass.
 
-## 🎯 Features
+## Current Status
 
-### Core Functionality
-- **Real-Time Occupancy Tracking**: Live updates via WebSocket for instant parking availability
-- **Color-Coded Status**: Green (>30% free), Amber (10-30% free), Red (<10% or full)
-- **Interactive Google Maps Integration**: Custom overlay layer with parking lot markers
-- **Mobile-Friendly UI**: Responsive design with bottom sheet panel on mobile
-- **Historical Analytics**: Track occupancy patterns by hour, day, and location
+This project is a working local demo and sensor-ingestion prototype.
 
-### Data Collection
-- **Multiple Sensor Support**:
-  - Ultrasonic sensors at entry/exit lanes
-  - License Plate Recognition (LPR) cameras
-  - Computer vision occupancy estimation
-- **MQTT Message Broker**: Real-time event streaming
-- **Event Logging**: Complete audit trail of entry/exit events
+- The map and destination search are dynamic.
+- Nearby parking lots are fetched from OpenStreetMap around the searched destination.
+- Parking capacities and availability are estimated unless OpenStreetMap provides capacity data or your own backend/sensors provide live data.
+- The backend still includes sample lots and live occupancy APIs for sensor/simulator workflows.
 
-### Backend
-- **FastAPI REST API**: Modern async Python framework
-- **Redis Caching**: High-performance in-memory occupancy store
-- **PostgreSQL Database**: Persistent storage for events and snapshots
-- **WebSocket Streaming**: Real-time updates to frontend clients
-- **Horizontal Scalability**: Designed for multi-location deployment
+## Features
 
-### Admin Tools
-- **Occupancy Simulation**: Time-of-day realistic patterns (weekday/weekend peaks)
-- **Manual Override**: Correct sensor errors via admin API
-- **MQTT Ingestion Service**: Converts raw sensor data to API events
+- Destination search with a persistent map search bar.
+- Current-location support through browser geolocation.
+- Interactive MapLibre map with OpenFreeMap vector tiles.
+- Dynamic nearby parking discovery from OpenStreetMap.
+- Parking markers color-coded by availability:
+  - Green: more than 30% free
+  - Amber: 10-30% free
+  - Red: less than 10% free
+- Parking cards sorted by distance from the destination.
+- Correct full percentage display based on `occupied_count / total_capacity`.
+- Directions button that opens Google Maps directions to the selected parking lot.
+- FastAPI backend with REST and WebSocket endpoints.
+- Redis-backed occupancy state.
+- PostgreSQL event/snapshot persistence.
+- MQTT ingestion service for future sensors.
+- Simulator service for demo occupancy events.
 
-## 📋 Project Structure
+## Important Limitations
 
-```
+OpenStreetMap can provide mapped parking locations, but it does not provide live parking availability for most lots.
+
+For OpenStreetMap-sourced lots, this app estimates:
+
+- total capacity, when no `capacity` tag exists
+- occupied spaces
+- available spaces
+- percentage full
+
+For real live availability, you need one of these:
+
+- your own sensors connected through MQTT
+- a city/garage parking API
+- a commercial parking provider
+- manual updates through the backend API
+
+## Project Structure
+
+```text
 ParkingSolved/
-├── backend/                    # FastAPI application
-│   ├── main.py                # Core API logic
-│   ├── requirements.txt        # Python dependencies
-│   └── Dockerfile             # Container image
-├── frontend/                   # Google Maps web interface
-│   └── index.html             # Single-page application
-├── simulator/                  # Test data generator
-│   ├── simulator.py           # Realistic occupancy patterns
-│   ├── requirements.txt        # Simulator dependencies
-│   └── Dockerfile             # Container image
-├── sensor-ingestion/           # MQTT event processor
-│   ├── mqtt_ingestion.py      # MQTT→API gateway
-│   ├── requirements.txt        # Sensor dependencies
-│   └── Dockerfile             # Container image
-├── docker-compose.yml         # Multi-container orchestration
-├── init-db.sql               # Database schema
-├── nginx.conf                # Web server configuration
-└── README.md                 # This file
+├── backend/
+│   ├── main.py
+│   ├── Dockerfile
+│   └── requirements.txt
+├── frontend/
+│   └── index.html
+├── sensor-ingestion/
+│   ├── mqtt_ingestion.py
+│   ├── Dockerfile
+│   └── requirements.txt
+├── simulator/
+│   ├── simulator.py
+│   ├── Dockerfile
+│   └── requirements.txt
+├── docker-compose.yml
+├── init-db.sql
+├── mqtt-config.xml
+├── nginx.conf
+├── quick-start.sh
+├── API.md
+├── ARCHITECTURE.md
+├── DEPLOYMENT.md
+├── GETTING_STARTED.md
+├── INDEX.md
+├── LEAFLET_MIGRATION.md
+├── MIGRATION_COMPLETE.md
+└── README.md
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
-- Docker & Docker Compose (macOS: Install via Docker Desktop)
-- Python 3.11+ (for local development)
-- Google Maps API Key (from [Google Cloud Console](https://console.cloud.google.com))
 
-### 1. Clone & Setup
+- Docker
+- Docker Compose
+- A browser with internet access
 
-```bash
-cd /Users/chintanshah/Documents/ParkingSolved
+No Google Maps API key is required.
 
-# Copy environment template (optional)
-cp .env.example .env
-```
+The browser must be able to load:
 
-### 2. Configure Google Maps API Key
+- MapLibre GL JS from `unpkg.com`
+- OpenFreeMap tiles from `tiles.openfreemap.org`
+- Nominatim search from `nominatim.openstreetmap.org`
+- Overpass parking data from `overpass-api.de`
 
-Edit `frontend/index.html` and replace:
-```javascript
-GOOGLE_MAPS_API_KEY: 'YOUR_GOOGLE_MAPS_API_KEY'
-```
-
-Get your API key from: https://console.cloud.google.com/apis/library/maps-backend.googleapis.com
-
-### 3. Start All Services with Docker Compose
+### Start the App
 
 ```bash
 docker-compose up -d
 ```
 
 This starts:
-- **PostgreSQL** (port 5432)
-- **Redis** (port 6379)
-- **MQTT Broker** (port 1883)
-- **FastAPI** (port 8000)
-- **Simulator** (generating test data)
-- **MQTT Ingestion** (processing sensor events)
-- **Nginx Web Server** (port 3000)
 
-### 4. Access the Application
+- PostgreSQL on port `5432`
+- Redis on port `6379`
+- HiveMQ MQTT broker on port `1883`
+- FastAPI backend on port `8000`
+- simulator service
+- MQTT ingestion service
+- nginx frontend on port `3000`
 
-- **Frontend**: http://localhost:3000
-- **API Docs**: http://localhost:8000/docs
-- **API Health**: http://localhost:8000/health
+### Open the App
 
-### 5. Verify Services
+- Frontend: http://localhost:3000
+- API docs: http://localhost:8000/docs
+- API health: http://localhost:8000/health
+
+### Verify Services
 
 ```bash
-# Check Docker containers
 docker-compose ps
-
-# View logs
-docker-compose logs -f api simulator
-
-# Test API
+curl http://localhost:8000/health
 curl http://localhost:8000/lots
 ```
 
-## 🏗️ Architecture
+## User Guide
 
-### Data Flow
+### 1. Open the Map
 
-```
-Sensors (USB/MQTT)
-      ↓
-MQTT Broker (HiveMQ)
-      ↓
-Ingestion Service (MQTT→HTTP)
-      ↓
-FastAPI Backend
-    ↙   ↘
-Redis  PostgreSQL
-    ↓
-WebSocket Connection
-    ↓
-Google Maps Frontend
+Go to:
+
+```text
+http://localhost:3000
 ```
 
-### System Components
+The app will ask for location permission. If you allow it, the map starts near your current location. If you deny it, the app falls back to the default Manhattan Beach coordinates.
 
-#### 1. **Backend API** (`backend/main.py`)
+### 2. Enter a Destination
 
-FastAPI application with:
-- **REST Endpoints**:
-  - `GET /lots` - List all lots with occupancy
-  - `GET /lots/{id}` - Detailed lot information
-  - `POST /lots` - Create new lot
-  - `POST /events` - Record entry/exit events
-  - `POST /occupancy/{id}` - Set occupancy manually
+Use the search bar at the top-left of the map.
 
-- **WebSocket Endpoint**:
-  - `WS /ws/lots/live` - Real-time updates stream
+Example searches:
 
-- **Database Models**:
-  - `parking_lots` - Location, capacity, coordinates
-  - `occupancy_events` - Entry/exit audit trail
-  - `occupancy_snapshots` - Periodic state snapshots
-
-#### 2. **Frontend** (`frontend/index.html`)
-
-Vanilla JavaScript Google Maps integration:
-- Custom SVG markers with color-coded status
-- Info windows with occupancy bar charts
-- Sidebar for lot listing (desktop)
-- Bottom sheet for mobile
-- Real-time WebSocket updates
-- Directions integration with Google Maps
-
-#### 3. **Simulator** (`simulator/simulator.py`)
-
-Generates realistic occupancy patterns:
-- **Weekday Pattern**: 
-  - 11am-2pm: 85% peak
-  - Off-peak: 10-50%
-- **Weekend Pattern**:
-  - 10am-4pm: 90% peak
-  - Morning/evening: 40-70%
-- Random event injection for natural variance
-
-#### 4. **MQTT Ingestion** (`sensor-ingestion/mqtt_ingestion.py`)
-
-Subscribes to sensor topics and routes events:
-- `parking/lot/{lot_id}/ultrasonic` - Distance sensors
-- `parking/lot/{lot_id}/lpr_entry` - License plate entry
-- `parking/lot/{lot_id}/lpr_exit` - License plate exit
-- `parking/lot/{lot_id}/occupancy_estimate` - Vision estimates
-
-## 📡 API Reference
-
-### Get All Lots
-
-```bash
-curl -X GET http://localhost:8000/lots
+```text
+Santa Monica Pier
+Phoenix Convention Center
+Times Square
+900 Manhattan Beach Blvd
 ```
 
-**Response:**
-```json
-[
-  {
-    "id": 1,
-    "name": "Manhattan Beach Pier - Lot A",
-    "address": "900 Manhattan Beach Blvd, Manhattan Beach, CA",
-    "latitude": 33.8843,
-    "longitude": -118.4073,
-    "total_capacity": 150,
-    "occupied_count": 120,
-    "available_count": 30,
-    "status": "amber",
-    "fill_percentage": 80.0,
-    "last_updated": "2024-06-02T10:30:00Z"
-  }
-]
+Click `Find Parking`.
+
+The app will:
+
+- geocode the destination
+- move the map to the destination
+- place a red destination marker
+- fetch nearby parking lots from OpenStreetMap
+- show parking markers around that destination
+- open the parking list panel
+
+### 3. Read Parking Availability
+
+Each parking card shows:
+
+- distance from the destination
+- percent full
+- filled spaces as `occupied / total`
+- available spaces
+- whether the slots are estimated or based on mapped capacity
+- source
+
+Example:
+
+```text
+12% full
+12/100
+88 available
+Estimated slots
+OpenStreetMap
 ```
 
-### Record Event
+### 4. Get Directions
 
-```bash
-curl -X POST http://localhost:8000/events \
-  -H "Content-Type: application/json" \
-  -d '{
-    "lot_id": 1,
-    "event_type": "entry"
-  }'
+Click `Get Directions` on a parking card or popup.
+
+The app opens Google Maps directions from your current location to that parking lot. This does not require a Google Maps API key because it uses a normal Google Maps URL.
+
+### 5. Return to Your Location
+
+Click `Use My Location`.
+
+The app will:
+
+- clear the destination marker
+- center the map on your location
+- search nearby mapped parking lots around you
+
+### 6. Toggle Parking Markers
+
+Click `Hide Parking` or `Show Parking` to toggle the parking markers.
+
+## How the Frontend Works
+
+The frontend is a single file:
+
+```text
+frontend/index.html
 ```
 
-### Set Occupancy
+It uses:
 
-```bash
-curl -X POST http://localhost:8000/occupancy/1?occupied_count=45
-```
+- MapLibre GL JS for the map
+- OpenFreeMap for vector tiles
+- Nominatim for destination geocoding
+- Overpass API for parking-lot discovery
+- browser geolocation for current location
+- WebSocket connection to the backend for live updates
 
-### WebSocket Connection
+Important frontend config:
 
 ```javascript
-const ws = new WebSocket('ws://localhost:8000/ws/lots/live');
-
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  
-  if (data.type === 'initial_state') {
-    console.log('Initial lots state:', data.lots);
-  } else if (data.type === 'occupancy_update') {
-    console.log(`Lot ${data.lot_id}: ${data.available_count} spots available`);
-  }
+const CONFIG = {
+  API_BASE_URL: 'http://localhost:8000',
+  WS_URL: 'ws://localhost:8000/ws/lots/live',
+  MAP_STYLE_URL: 'https://tiles.openfreemap.org/styles/liberty',
+  OVERPASS_URL: 'https://overpass-api.de/api/interpreter',
+  DEFAULT_CENTER: { lat: 33.8843, lng: -118.4073 },
+  DEFAULT_ZOOM: 15,
+  DESTINATION_ZOOM: 14,
+  NEARBY_RADIUS_MILES: 5,
+  NEARBY_RADIUS_METERS: 8047
 };
 ```
 
-## 🔧 Development
+## Backend API
 
-### Local Setup (without Docker)
+The backend is a FastAPI app:
 
-```bash
-# Create virtual environment
-python3.11 -m venv venv
-source venv/bin/activate
-
-# Install backend dependencies
-pip install -r backend/requirements.txt
-pip install -r simulator/requirements.txt
-pip install -r sensor-ingestion/requirements.txt
-
-# Start services locally
-postgres # Start PostgreSQL service
-redis-server # Start Redis
-# Then run each service in separate terminals
-
-# Terminal 1: Backend API
-cd backend && python -m uvicorn main:app --reload
-
-# Terminal 2: Simulator
-cd simulator && python simulator.py
-
-# Terminal 3: MQTT Ingestion
-cd sensor-ingestion && python mqtt_ingestion.py
-
-# Terminal 4: Frontend (simple HTTP server)
-cd frontend && python -m http.server 3000
+```text
+backend/main.py
 ```
 
-### Running Tests
+It manages known parking lots, occupancy events, manual occupancy updates, and WebSocket broadcasts.
+
+### Main Endpoints
+
+```text
+GET  /health
+GET  /lots
+GET  /lots/{lot_id}
+POST /lots
+POST /events
+POST /occupancy/{lot_id}
+WS   /ws/lots/live
+```
+
+### Health Check
 
 ```bash
-# API health check
 curl http://localhost:8000/health
+```
 
-# Fetch lots
+### Get Backend Lots
+
+```bash
 curl http://localhost:8000/lots
+```
 
-# Simulate an entry event
+The backend contains demo/sample lots used for simulator and sensor workflows. The frontend destination search now uses OpenStreetMap dynamically instead of relying only on these demo lots.
+
+### Record Entry/Exit Event
+
+```bash
 curl -X POST http://localhost:8000/events \
   -H "Content-Type: application/json" \
   -d '{"lot_id": 1, "event_type": "entry"}'
-
-# WebSocket test (using websocat)
-websocat ws://localhost:8000/ws/lots/live
 ```
 
-## 📊 Database Schema
-
-### parking_lots
-```sql
-CREATE TABLE parking_lots (
-  id SERIAL PRIMARY KEY,
-  name VARCHAR(255) NOT NULL,
-  address VARCHAR(500) NOT NULL,
-  latitude DECIMAL(10, 8) NOT NULL,
-  longitude DECIMAL(11, 8) NOT NULL,
-  total_capacity INTEGER NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### occupancy_events
-```sql
-CREATE TABLE occupancy_events (
-  id SERIAL PRIMARY KEY,
-  lot_id INTEGER NOT NULL REFERENCES parking_lots(id),
-  event_type VARCHAR(20) CHECK (event_type IN ('entry', 'exit')),
-  timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### occupancy_snapshots
-```sql
-CREATE TABLE occupancy_snapshots (
-  id SERIAL PRIMARY KEY,
-  lot_id INTEGER NOT NULL REFERENCES parking_lots(id),
-  occupied_count INTEGER NOT NULL,
-  snapshot_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-## 🌐 Deploying to Production
-
-### 1. Environment Configuration
-
-Create `.env` file:
-```env
-# Database
-DATABASE_URL=postgresql://user:password@db.example.com:5432/parking
-REDIS_URL=redis://redis.example.com:6379
-
-# MQTT
-MQTT_BROKER=mqtt.example.com
-MQTT_PORT=8883
-MQTT_USER=your_mqtt_user
-MQTT_PASSWORD=your_mqtt_password
-
-# API
-API_HOST=0.0.0.0
-API_PORT=8000
-
-# Google Maps
-GOOGLE_MAPS_API_KEY=your_api_key_here
-
-# Google Places API (optional, for native integration)
-GOOGLE_PLACES_API_KEY=your_places_api_key
-```
-
-### 2. Deploy with Docker Compose
-
-On your production server:
+### Manually Set Occupancy
 
 ```bash
-# Copy files to server
-scp -r ParkingSolved/ user@server:/home/parking/
-
-# SSH into server
-ssh user@server
-
-# Navigate to project
-cd /home/parking/ParkingSolved
-
-# Start services
-docker-compose -f docker-compose.prod.yml up -d
-
-# View logs
-docker-compose logs -f
+curl -X POST "http://localhost:8000/occupancy/1?occupied_count=45"
 ```
 
-### 3. Set Up Reverse Proxy (Nginx)
+## Live Updates
 
-```nginx
-server {
-    listen 80;
-    server_name parking.example.com;
-    
-    # Redirect to HTTPS
-    return 301 https://$server_name$request_uri;
-}
+The backend broadcasts updates over:
 
-server {
-    listen 443 ssl http2;
-    server_name parking.example.com;
-    
-    ssl_certificate /etc/letsencrypt/live/parking.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/parking.example.com/privkey.pem;
-    
-    # Frontend
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_set_header Host $host;
-    }
-    
-    # API
-    location /api/ {
-        proxy_pass http://localhost:8000/;
-        proxy_set_header Host $host;
-    }
-    
-    # WebSocket
-    location /ws/ {
-        proxy_pass http://localhost:8000/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
+```text
+ws://localhost:8000/ws/lots/live
+```
+
+Frontend code listens for:
+
+- `initial_state`
+- `occupancy_update`
+
+The current live WebSocket flow works best for backend-managed lots. OpenStreetMap-discovered lots are external map data and do not have real backend IDs unless you import them into the backend.
+
+## MQTT Sensor Ingestion
+
+The MQTT ingestion service is in:
+
+```text
+sensor-ingestion/mqtt_ingestion.py
+```
+
+It subscribes to:
+
+```text
+parking/lot/+/ultrasonic
+parking/lot/+/lpr_entry
+parking/lot/+/lpr_exit
+parking/lot/+/occupancy_estimate
+```
+
+Example LPR entry payload:
+
+```json
+{
+  "camera_id": "cam_entry_1",
+  "license_plate": "ABC123",
+  "timestamp": "2026-06-04T12:00:00Z"
 }
 ```
 
-### 4. Enable HTTPS with Let's Encrypt
+Example occupancy estimate payload:
+
+```json
+{
+  "occupied_count": 45,
+  "total_capacity": 150,
+  "confidence": 0.95,
+  "timestamp": "2026-06-04T12:00:00Z"
+}
+```
+
+## Simulator
+
+The simulator is in:
+
+```text
+simulator/simulator.py
+```
+
+It generates realistic entry/exit events against the backend API using time-of-day patterns.
+
+It reads the API URL from:
+
+```text
+API_BASE_URL
+```
+
+In Docker Compose, this is:
+
+```text
+http://api:8000
+```
+
+## Data Flow
+
+### Dynamic Destination Search Flow
+
+```text
+User enters destination
+      ↓
+Nominatim geocodes destination
+      ↓
+MapLibre centers map
+      ↓
+Overpass finds mapped parking lots nearby
+      ↓
+Frontend estimates availability when live data is unavailable
+      ↓
+User chooses a lot and opens directions
+```
+
+### Sensor/Backend Live Flow
+
+```text
+Sensor or simulator
+      ↓
+MQTT broker or backend API
+      ↓
+FastAPI backend
+      ↓
+Redis occupancy state
+      ↓
+PostgreSQL event/snapshot history
+      ↓
+WebSocket broadcast
+      ↓
+Frontend live update
+```
+
+## Database Tables
+
+### `parking_lots`
+
+Stores backend-managed lots.
+
+### `occupancy_events`
+
+Stores entry/exit events.
+
+### `occupancy_snapshots`
+
+Stores point-in-time occupancy snapshots.
+
+The schema is initialized from:
+
+```text
+init-db.sql
+```
+
+## Development Notes
+
+### Restart Services
 
 ```bash
-sudo certbot certonly --standalone -d parking.example.com
-```
-
-## 🔌 Integrating Real Sensors
-
-### USB Ultrasonic Sensors
-
-```python
-import serial
-import json
-import paho.mqtt.client as mqtt
-
-# Connect to sensor
-sensor = serial.Serial('/dev/ttyUSB0', 9600)
-
-# Create MQTT client
-client = mqtt.Client()
-client.connect('mqtt_broker', 1883)
-
-while True:
-    distance = sensor.readline().decode().strip()
-    
-    # Send to MQTT broker
-    payload = {
-        'sensor_id': 'sensor_1',
-        'distance_cm': float(distance),
-        'timestamp': datetime.now().isoformat()
-    }
-    client.publish('parking/lot/1/ultrasonic', json.dumps(payload))
-```
-
-### LPR Camera Integration (YOLO + OpenCV)
-
-```python
-import cv2
-import torch
-from ultralytics import YOLO
-import paho.mqtt.client as mqtt
-import json
-
-# Load YOLO model for license plate detection
-model = YOLO('yolov8m.pt')
-plate_detector = torch.hub.load('ultralytics/yolov8', 'custom', 'license_plate.pt')
-
-# MQTT client
-client = mqtt.Client()
-client.connect('mqtt_broker', 1883)
-
-# Connect to camera
-cap = cv2.VideoCapture('rtsp://camera_ip:554/stream')
-
-while True:
-    ret, frame = cap.read()
-    
-    # Detect vehicles
-    results = model(frame)
-    
-    # Extract license plates
-    for detection in results[0].boxes:
-        crop = frame[int(detection.xyxy[0][1]):int(detection.xyxy[0][3]),
-                     int(detection.xyxy[0][0]):int(detection.xyxy[0][2])]
-        
-        plate_results = plate_detector(crop)
-        plate_text = extract_plate_text(plate_results)
-        
-        # Send to MQTT
-        payload = {
-            'camera_id': 'cam_entry_1',
-            'license_plate': plate_text,
-            'timestamp': datetime.now().isoformat()
-        }
-        client.publish('parking/lot/1/lpr_entry', json.dumps(payload))
-```
-
-## 📈 Scaling for Multiple Locations
-
-### 1. Add New Parking Lot
-
-```bash
-curl -X POST http://localhost:8000/lots \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Redondo Beach Pier - Lot A",
-    "address": "1800 Harbor Drive, Redondo Beach, CA",
-    "latitude": 33.8353,
-    "longitude": -118.3938,
-    "total_capacity": 250
-  }'
-```
-
-### 2. Update Frontend Map Center
-
-Edit `frontend/index.html`:
-```javascript
-const CONFIG = {
-  DEFAULT_CENTER: { lat: 33.8353, lng: -118.3938 }, // Redondo Beach
-  DEFAULT_ZOOM: 14,
-};
-```
-
-### 3. Onboard Sensors for New Location
-
-Configure new MQTT topics:
-```
-parking/lot/{new_lot_id}/ultrasonic
-parking/lot/{new_lot_id}/lpr_entry
-parking/lot/{new_lot_id}/lpr_exit
-```
-
-## 🆘 Troubleshooting
-
-### Services Won't Start
-
-```bash
-# Check Docker daemon
-docker ps
-
-# View logs
-docker-compose logs
-
-# Restart all services
 docker-compose restart
+```
 
-# Full cleanup and rebuild
+### Rebuild Services
+
+```bash
+docker-compose up -d --build
+```
+
+### View Logs
+
+```bash
+docker-compose logs -f
+docker-compose logs -f api
+docker-compose logs -f simulator
+docker-compose logs -f ingestion
+docker-compose logs -f mqtt
+```
+
+### Stop Services
+
+```bash
+docker-compose down
+```
+
+### Reset Data
+
+```bash
 docker-compose down -v
 docker-compose up -d --build
 ```
 
-### Database Connection Issues
+## Troubleshooting
 
-```bash
-# Check PostgreSQL
-psql -h localhost -U parking_user -d parking_db
+### The Map Does Not Load
 
-# Verify connection string
-echo "postgresql://parking_user:parking_pass@localhost/parking_db"
+Check that your browser can access:
 
-# Check if port 5432 is listening
-netstat -an | grep 5432
+```text
+https://unpkg.com
+https://tiles.openfreemap.org
 ```
 
-### WebSocket Connection Failures
+Also open browser DevTools and check the Console/Network tabs.
+
+### Destination Search Does Not Work
+
+The browser must be able to call:
+
+```text
+https://nominatim.openstreetmap.org
+```
+
+Try a more specific destination, such as a full address or well-known place name.
+
+### No Parking Lots Appear Near a Destination
+
+The app searches OpenStreetMap parking data within 5 miles of the destination.
+
+If no parking appears, it may mean:
+
+- OpenStreetMap has no mapped parking lots nearby
+- Overpass is temporarily slow or unavailable
+- the destination is too vague
+- the search radius is too small
+
+You can adjust:
 
 ```javascript
-// Check browser console for errors
-// Verify WebSocket URL matches your server
-console.log(new WebSocket('ws://localhost:8000/ws/lots/live'));
-
-// Test with curl
-curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" \
-  http://localhost:8000/ws/lots/live
+NEARBY_RADIUS_MILES
+NEARBY_RADIUS_METERS
 ```
 
-### MQTT Connection Issues
+in `frontend/index.html`.
+
+### Percent Full Looks Wrong
+
+The UI displays:
+
+```text
+occupied_count / total_capacity
+```
+
+and calculates:
+
+```text
+percent_full = occupied_count / total_capacity * 100
+```
+
+Available spaces are shown separately.
+
+### API Is Not Responding
 
 ```bash
-# Test MQTT broker
-docker-compose exec mqtt mqtt_sub -h localhost -t "parking/#"
-
-# Publish test message
-docker-compose exec mqtt mqtt_pub -h localhost \
-  -t "parking/lot/1/ultrasonic" \
-  -m '{"sensor_id":"s1","distance_cm":120}'
+docker-compose ps
+docker-compose logs api --tail=100
+curl http://localhost:8000/health
 ```
 
-## 🤝 Contributing
+### MQTT Is Not Healthy
 
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open Pull Request
+```bash
+docker-compose ps mqtt
+docker-compose logs mqtt --tail=100
+```
 
-## 📝 License
+The current HiveMQ config is:
 
-MIT License - see LICENSE file for details
+```text
+mqtt-config.xml
+```
 
-## 🗺️ Roadmap
+## Production Considerations
 
-- [ ] Admin dashboard with historical analytics
-- [ ] SMS alerts (Twilio integration) for full lots
-- [ ] Machine learning for occupancy prediction
-- [ ] Rate limiting and OAuth2 authentication
-- [ ] Mobile app (React Native)
-- [ ] Google Places API native integration
-- [ ] Support for EV charging station availability
-- [ ] Integration with smart city platforms (CKAN)
-- [ ] Multi-language support
-- [ ] Accessibility (WCAG 2.1 AA)
+Before using this as a production app:
 
-## 📞 Support
+- replace estimated availability with real parking data
+- import OpenStreetMap lots into your own backend if you need stable IDs
+- cache Nominatim/Overpass results or run your own services
+- follow Nominatim and Overpass usage policies
+- add backend authentication for admin/manual updates
+- add rate limiting
+- add monitoring and logs
+- use HTTPS
+- use production-grade database credentials
 
-For issues and questions:
-- GitHub Issues: [Create an issue](https://github.com/chintan-22/ParkingSolved/issues)
-- Email: support@parkingsolved.io
-- Documentation: https://parkingsolved.io/docs
+## Roadmap
 
----
+- Import OpenStreetMap lots into PostgreSQL.
+- Connect dynamic OSM lots to backend occupancy state.
+- Add a production geocoding provider or self-hosted Nominatim.
+- Add a production Overpass alternative or cached parking dataset.
+- Add real sensor integrations.
+- Add admin dashboard for managing lots and overrides.
+- Add historical analytics.
+- Add route-aware parking recommendations.
+- Add accessibility improvements.
 
-**Built with ❤️ for smarter parking in coastal cities.**
+## License
+
+MIT License.
