@@ -4,8 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Parking - Google Maps Integration</title>
-    <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY&libraries=marker"></script>
+    <title>Smart Parking - Live Dashboard</title>
+    <!-- Leaflet Map (Open Source - No API Key Needed) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -379,12 +381,11 @@
         const CONFIG = {
             API_BASE_URL: 'http://localhost:8000',
             WS_URL: 'ws://localhost:8000/ws/lots/live',
-            GOOGLE_MAPS_API_KEY: 'YOUR_GOOGLE_MAPS_API_KEY',
             DEFAULT_CENTER: {
                 lat: 33.8843,
                 lng: -118.4073
             }, // Manhattan Beach Pier
-            DEFAULT_ZOOM: 14,
+            DEFAULT_ZOOM: 15,
             UPDATE_INTERVAL: 5000, // 5 seconds
         };
 
@@ -396,7 +397,6 @@
         let parkingLayerVisible = true;
         let allLots = [];
         let lotMarkers = {};
-        let infoWindows = {};
         let userLocation = CONFIG.DEFAULT_CENTER;
         let websocket = null;
 
@@ -437,15 +437,14 @@
                     );
                 }
 
-                // Initialize map
-                map = new google.maps.Map(document.getElementById('map'), {
-                    zoom: CONFIG.DEFAULT_ZOOM,
-                    center: CONFIG.DEFAULT_CENTER,
-                    mapTypeControl: true,
-                    fullscreenControl: true,
-                    zoomControl: true,
-                    streetViewControl: true,
-                });
+                // Initialize Leaflet map
+                map = L.map('map').setView([CONFIG.DEFAULT_CENTER.lat, CONFIG.DEFAULT_CENTER.lng], CONFIG.DEFAULT_ZOOM);
+
+                // Add OpenStreetMap tiles
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap contributors',
+                    maxZoom: 19
+                }).addTo(map);
 
                 // Load parking lots
                 await loadParkingLots();
@@ -491,35 +490,57 @@
         // ============================================================================
 
         function addLotMarker(lot) {
-            const icon = createCustomIcon(lot.status);
+            const colors = {
+                green: '#4CAF50',
+                amber: '#FFC107',
+                red: '#F44336',
+            };
 
-            const marker = new google.maps.Marker({
-                position: {
-                    lat: lot.latitude,
-                    lng: lot.longitude
-                },
-                map: parkingLayerVisible ? map : null,
-                title: lot.name,
-                icon: {
-                    url: 'data:image/svg+xml;base64,' + btoa(icon)
-                },
-                lot: lot,
+            // Create custom icon
+            const iconHtml = `
+                <div style="
+                    background-color: ${colors[lot.status]};
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: white;
+                    font-weight: bold;
+                    font-size: 18px;
+                    border: 3px solid white;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+                    cursor: pointer;
+                ">P</div>
+            `;
+
+            const icon = L.divIcon({
+                html: iconHtml,
+                className: 'custom-icon',
+                iconSize: [40, 40],
+                iconAnchor: [20, 20],
+                popupAnchor: [0, -20]
             });
 
-            const infoWindowContent = createInfoWindowContent(lot);
-            const infoWindow = new google.maps.InfoWindow({
-                content: infoWindowContent,
-                maxWidth: 300,
+            // Create marker
+            const marker = L.marker([lot.latitude, lot.longitude], {
+                icon: icon
+            }).addTo(map);
+
+            // Create popup content
+            const popupContent = createInfoWindowContent(lot);
+            marker.bindPopup(popupContent, {
+                maxWidth: 300
             });
 
-            marker.addListener('click', () => {
-                // Close all other info windows
-                Object.values(infoWindows).forEach(iw => iw.close());
-                infoWindow.open(map, marker);
+            // Click handler
+            marker.on('click', () => {
+                marker.openPopup();
+                panToLot(lot);
             });
 
             lotMarkers[lot.id] = marker;
-            infoWindows[lot.id] = infoWindow;
         }
 
         function createCustomIcon(status) {
@@ -528,11 +549,7 @@
                 amber: '#FFC107',
                 red: '#F44336',
             };
-
-            return `<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="20" cy="20" r="18" fill="${colors[status]}" stroke="white" stroke-width="2"/>
-                <text x="20" y="25" font-size="16" font-weight="bold" fill="white" text-anchor="middle">P</text>
-            </svg>`;
+            return colors[status] || '#999';
         }
 
         function createInfoWindowContent(lot) {
@@ -614,19 +631,46 @@
 
         function updateMarker(lot) {
             const marker = lotMarkers[lot.id];
-            const infoWindow = infoWindows[lot.id];
+            if (!marker) return;
 
-            if (marker) {
-                const icon = createCustomIcon(lot.status);
-                marker.setIcon({
-                    url: 'data:image/svg+xml;base64,' + btoa(icon)
-                });
-                marker.lot = lot;
-            }
+            // Update popup content
+            const popupContent = createInfoWindowContent(lot);
+            marker.setPopupContent(popupContent);
 
-            if (infoWindow && map.getCenter() && infoWindow.getMap() === map) {
-                infoWindow.setContent(createInfoWindowContent(lot));
-            }
+            // Update marker icon color
+            const colors = {
+                green: '#4CAF50',
+                amber: '#FFC107',
+                red: '#F44336',
+            };
+
+            const iconHtml = `
+                <div style="
+                    background-color: ${colors[lot.status]};
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: white;
+                    font-weight: bold;
+                    font-size: 18px;
+                    border: 3px solid white;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+                    cursor: pointer;
+                ">P</div>
+            `;
+
+            const icon = L.divIcon({
+                html: iconHtml,
+                className: 'custom-icon',
+                iconSize: [40, 40],
+                iconAnchor: [20, 20],
+                popupAnchor: [0, -20]
+            });
+
+            marker.setIcon(icon);
         }
 
         // ============================================================================
@@ -696,7 +740,11 @@
             const btn = document.getElementById('toggleParking');
 
             Object.values(lotMarkers).forEach(marker => {
-                marker.setMap(parkingLayerVisible ? map : null);
+                if (parkingLayerVisible) {
+                    marker.addTo(map);
+                } else {
+                    map.removeLayer(marker);
+                }
             });
 
             btn.textContent = parkingLayerVisible ? 'Hide Parking' : 'Show Parking';
@@ -704,17 +752,11 @@
         }
 
         function panToLot(lot) {
-            map.panTo({
-                lat: lot.latitude,
-                lng: lot.longitude
-            });
-            map.setZoom(15);
-
+            if (!map) return;
+            map.setView([lot.latitude, lot.longitude], 15);
             const marker = lotMarkers[lot.id];
             if (marker) {
-                const infoWindow = infoWindows[lot.id];
-                Object.values(infoWindows).forEach(iw => iw.close());
-                infoWindow.open(map, marker);
+                marker.openPopup();
             }
         }
 
