@@ -269,12 +269,17 @@ const CONFIG = {
   API_BASE_URL: 'http://localhost:8000',
   WS_URL: 'ws://localhost:8000/ws/lots/live',
   MAP_STYLE_URL: 'https://tiles.openfreemap.org/styles/liberty',
-  OVERPASS_URL: 'https://overpass-api.de/api/interpreter',
+  OVERPASS_URLS: [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass.openstreetmap.ru/api/interpreter'
+  ],
   DEFAULT_CENTER: { lat: 33.8843, lng: -118.4073 },
   DEFAULT_ZOOM: 15,
   DESTINATION_ZOOM: 14,
   NEARBY_RADIUS_MILES: 5,
-  NEARBY_RADIUS_METERS: 8047
+  NEARBY_RADIUS_METERS: 8047,
+  PARKING_SEARCH_RADII_METERS: [2500, 5000, 8047]
 };
 ```
 

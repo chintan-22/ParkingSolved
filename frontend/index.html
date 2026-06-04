@@ -506,7 +506,11 @@
             API_BASE_URL: IS_LOCAL_HOST ? 'http://localhost:8000' : '',
             WS_URL: IS_LOCAL_HOST ? 'ws://localhost:8000/ws/lots/live' : null,
             MAP_STYLE_URL: 'https://tiles.openfreemap.org/styles/liberty',
-            OVERPASS_URL: 'https://overpass-api.de/api/interpreter',
+            OVERPASS_URLS: [
+                'https://overpass-api.de/api/interpreter',
+                'https://overpass.kumi.systems/api/interpreter',
+                'https://overpass.openstreetmap.ru/api/interpreter',
+            ],
             DEFAULT_CENTER: {
                 lat: 33.8843,
                 lng: -118.4073
@@ -515,6 +519,7 @@
             DESTINATION_ZOOM: 14,
             NEARBY_RADIUS_MILES: 5,
             NEARBY_RADIUS_METERS: 8047,
+            PARKING_SEARCH_RADII_METERS: [2500, 5000, 8047],
             UPDATE_INTERVAL: 5000, // 5 seconds
         };
 
@@ -770,26 +775,7 @@
         async function loadParkingLotsNear(location) {
             clearLotMarkers();
 
-            const query = `
-                [out:json][timeout:25];
-                (
-                  node["amenity"="parking"](around:${CONFIG.NEARBY_RADIUS_METERS},${location.lat},${location.lng});
-                  way["amenity"="parking"](around:${CONFIG.NEARBY_RADIUS_METERS},${location.lat},${location.lng});
-                  relation["amenity"="parking"](around:${CONFIG.NEARBY_RADIUS_METERS},${location.lat},${location.lng});
-                );
-                out center tags;
-            `;
-
-            const params = new URLSearchParams({ data: query });
-            const response = await fetch(`${CONFIG.OVERPASS_URL}?${params.toString()}`, {
-                headers: { Accept: 'application/json' },
-            });
-
-            if (!response.ok) {
-                throw new Error('Parking search request failed');
-            }
-
-            const data = await response.json();
+            const data = await fetchParkingElements(location);
             allLots = data.elements
                 .map(element => createLotFromOsmElement(element, location))
                 .filter(Boolean)
@@ -801,6 +787,62 @@
             });
 
             console.log(`Loaded ${allLots.length} mapped parking lots near ${location.label || 'current location'}`);
+        }
+
+        async function fetchParkingElements(location) {
+            const errors = [];
+
+            for (const radius of CONFIG.PARKING_SEARCH_RADII_METERS) {
+                const query = createParkingOverpassQuery(location, radius);
+
+                for (const endpoint of CONFIG.OVERPASS_URLS) {
+                    try {
+                        const response = await fetch(endpoint, {
+                            method: 'POST',
+                            body: new URLSearchParams({ data: query }),
+                        });
+
+                        if (!response.ok) {
+                            throw new Error(`${endpoint} returned ${response.status}`);
+                        }
+
+                        const contentType = response.headers.get('content-type') || '';
+                        if (!contentType.includes('application/json')) {
+                            const text = await response.text();
+                            throw new Error(`${endpoint} returned non-JSON response: ${text.slice(0, 80)}`);
+                        }
+
+                        const data = await response.json();
+                        if (data.elements?.length) {
+                            return data;
+                        }
+                    } catch (error) {
+                        console.warn('Parking search endpoint failed:', error);
+                        errors.push(error);
+                    }
+                }
+            }
+
+            if (errors.length) {
+                throw new Error('Parking search service is busy. Try again in a moment.');
+            }
+
+            return { elements: [] };
+        }
+
+        function createParkingOverpassQuery(location, radius) {
+            return `
+                [out:json][timeout:18];
+                (
+                  nwr["amenity"="parking"](around:${radius},${location.lat},${location.lng});
+                  nwr["amenity"="parking_space"](around:${radius},${location.lat},${location.lng});
+                  nwr["parking"="street_side"](around:${radius},${location.lat},${location.lng});
+                  nwr["parking"="surface"](around:${radius},${location.lat},${location.lng});
+                  nwr["parking"="multi-storey"](around:${radius},${location.lat},${location.lng});
+                  nwr["parking"="underground"](around:${radius},${location.lat},${location.lng});
+                );
+                out center tags 80;
+            `;
         }
 
         function createLotFromOsmElement(element, location) {
