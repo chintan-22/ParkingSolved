@@ -130,6 +130,44 @@ curl http://localhost:8000/health
 curl http://localhost:8000/lots
 ```
 
+## Deploying the Frontend to Vercel
+
+The repository root does not contain `index.html`; the frontend lives at:
+
+```text
+frontend/index.html
+```
+
+Vercel will return a 404 if it deploys the repository root without being told where the static app is. This repo includes:
+
+```text
+vercel.json
+```
+
+with a rewrite that serves `frontend/index.html` for incoming routes.
+
+```json
+{
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/frontend/index.html"
+    }
+  ]
+}
+```
+
+After adding or updating `vercel.json`, redeploy the Vercel project.
+
+On Vercel, the frontend runs in static mode:
+
+- MapLibre/OpenFreeMap works.
+- Destination search works.
+- OpenStreetMap parking discovery works.
+- The local Docker backend at `localhost:8000` is disabled because hosted users cannot access your machine's localhost.
+
+To enable live backend/WebSocket data in production, deploy the FastAPI backend separately and update the frontend config to point to that hosted API.
+
 ## User Guide
 
 ### 1. Open the Map
