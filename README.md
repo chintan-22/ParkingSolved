@@ -280,11 +280,11 @@ const CONFIG = {
   NEARBY_RADIUS_MILES: 5,
   NEARBY_RADIUS_METERS: 8047,
   PARKING_SEARCH_RADII_METERS: [2500, 5000, 8047],
-  OVERPASS_REQUEST_TIMEOUT_MS: 12000
+  OVERPASS_REQUEST_TIMEOUT_MS: 8000
 };
 ```
 
-Parking discovery queries all configured Overpass mirrors in parallel for each radius and uses the first mirror that returns parking results. This keeps hosted searches responsive when one public Overpass server is slow or temporarily busy.
+Parking discovery queries all configured Overpass mirrors and search radii in parallel, then uses the first request that returns parking results. Results are cached by approximate coordinates so repeated searches near the same destination are faster.
 
 ## Backend API
 

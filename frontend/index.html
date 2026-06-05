@@ -520,7 +520,7 @@
             NEARBY_RADIUS_MILES: 5,
             NEARBY_RADIUS_METERS: 8047,
             PARKING_SEARCH_RADII_METERS: [2500, 5000, 8047],
-            OVERPASS_REQUEST_TIMEOUT_MS: 12000,
+            OVERPASS_REQUEST_TIMEOUT_MS: 8000,
             UPDATE_INTERVAL: 5000, // 5 seconds
         };
 
@@ -539,6 +539,8 @@
         let referenceLocation = CONFIG.DEFAULT_CENTER;
         let referenceLabel = 'your location';
         let websocket = null;
+        let activeSearchId = 0;
+        const parkingSearchCache = new Map();
 
         const statusIcons = {
             green: `<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -645,6 +647,7 @@
         }
 
         async function centerOnUserLocation() {
+            const searchId = ++activeSearchId;
             userLocation = await getCurrentLocation();
             destinationLocation = null;
             referenceLocation = userLocation;
@@ -659,7 +662,8 @@
                 center: [userLocation.lng, userLocation.lat],
                 zoom: CONFIG.DEFAULT_ZOOM,
             });
-            await loadParkingLotsNear(userLocation);
+            await loadParkingLotsNear(userLocation, searchId);
+            if (searchId !== activeSearchId) return;
             updateSidebar();
         }
 
@@ -669,6 +673,7 @@
             const destination = input.value.trim();
 
             if (!destination) return;
+            const searchId = ++activeSearchId;
 
             const submitButton = event.submitter;
             if (submitButton) {
@@ -678,6 +683,8 @@
 
             try {
                 const result = await geocodeDestination(destination);
+                if (searchId !== activeSearchId) return;
+
                 destinationLocation = {
                     lat: result.lat,
                     lng: result.lng,
@@ -692,7 +699,8 @@
                     zoom: CONFIG.DESTINATION_ZOOM,
                 });
                 showSidebarMessage('Searching mapped parking lots near your destination...');
-                await loadParkingLotsNear(destinationLocation);
+                await loadParkingLotsNear(destinationLocation, searchId);
+                if (searchId !== activeSearchId) return;
                 updateSidebar();
                 openSidebar();
             } catch (error) {
@@ -763,7 +771,7 @@
 
         async function loadParkingLots() {
             try {
-                await loadParkingLotsNear(referenceLocation);
+                await loadParkingLotsNear(referenceLocation, activeSearchId);
 
                 updateSidebar();
 
@@ -773,10 +781,12 @@
             }
         }
 
-        async function loadParkingLotsNear(location) {
+        async function loadParkingLotsNear(location, searchId = activeSearchId) {
             clearLotMarkers();
 
             const data = await fetchParkingElements(location);
+            if (searchId !== activeSearchId) return;
+
             allLots = data.elements
                 .map(element => createLotFromOsmElement(element, location))
                 .filter(Boolean)
@@ -791,11 +801,16 @@
         }
 
         async function fetchParkingElements(location) {
-            const errors = [];
+            const cacheKey = getParkingCacheKey(location);
+            const cachedResult = parkingSearchCache.get(cacheKey);
+            if (cachedResult) {
+                console.log('Using cached parking search result');
+                return cachedResult;
+            }
 
-            for (const radius of CONFIG.PARKING_SEARCH_RADII_METERS) {
+            const requests = CONFIG.PARKING_SEARCH_RADII_METERS.flatMap(radius => {
                 const query = createParkingOverpassQuery(location, radius);
-                const parallelEndpointRequests = CONFIG.OVERPASS_URLS.map(endpoint => {
+                return CONFIG.OVERPASS_URLS.map(endpoint => {
                     return fetchParkingFromEndpoint(endpoint, query).then(data => {
                         if (data.elements?.length) {
                             return data;
@@ -803,20 +818,20 @@
                         throw new Error(`${endpoint} returned no parking results at ${radius}m`);
                     });
                 });
+            });
 
-                try {
-                    return await Promise.any(parallelEndpointRequests);
-                } catch (error) {
-                    console.warn(`No parking results at ${radius}m radius`, error);
-                    errors.push(error);
-                }
+            try {
+                const data = await Promise.any(requests);
+                parkingSearchCache.set(cacheKey, data);
+                return data;
+            } catch (error) {
+                console.warn('All parking search endpoints failed or returned no results:', error);
+                return { elements: [] };
             }
+        }
 
-            if (errors.length) {
-                throw new Error('Parking search service is busy. Try again in a moment.');
-            }
-
-            return { elements: [] };
+        function getParkingCacheKey(location) {
+            return `${Number(location.lat).toFixed(3)},${Number(location.lng).toFixed(3)}`;
         }
 
         async function fetchParkingFromEndpoint(endpoint, query) {
@@ -967,8 +982,9 @@
                 .addTo(map);
 
             // Click handler
-            markerEl.addEventListener('click', () => {
-                panToLot(lot);
+            markerEl.addEventListener('click', (event) => {
+                event.stopPropagation();
+                showLotDetails(lot, true);
             });
 
             lotMarkers[lot.id] = marker;
@@ -1009,6 +1025,7 @@
                 <div class="info-window">
                     <div class="info-window-title">${escapeHtml(lot.name)}</div>
                     <div class="info-window-content">
+                        <div>${escapeHtml(lot.address || 'Mapped parking location')}</div>
                         <div><strong>Filled:</strong> ${metrics.occupiedCount} / ${metrics.totalCapacity}</div>
                         <div><strong>Available:</strong> ${metrics.availableCount} spots</div>
                         <div><strong>Fill Rate:</strong> ${fillPercentage.toFixed(1)}%</div>
@@ -1300,18 +1317,31 @@
         }
 
         function panToLot(lot) {
-            if (!map) return;
-            map.flyTo({
-                center: [lot.longitude, lot.latitude],
-                zoom: 15,
-            });
-            const marker = lotMarkers[lot.id];
-            if (marker) {
-                const popup = marker.getPopup();
-                if (popup) {
-                    popup.setLngLat(marker.getLngLat()).addTo(map);
-                }
+            showLotDetails(lot, true);
+        }
+
+        function showLotDetails(lot, shouldMoveMap = false) {
+            if (!map || !lot) return;
+
+            if (shouldMoveMap) {
+                map.flyTo({
+                    center: [lot.longitude, lot.latitude],
+                    zoom: Math.max(map.getZoom(), 15),
+                });
             }
+
+            const marker = lotMarkers[lot.id];
+            const popup = new maplibregl.Popup({
+                offset: 28,
+                maxWidth: '320px',
+            })
+                .setLngLat([lot.longitude, lot.latitude])
+                .setHTML(createInfoWindowContent(lot));
+
+            if (marker) {
+                marker.setPopup(popup);
+            }
+            popup.addTo(map);
         }
 
         function navigateTo(lat, lng) {
