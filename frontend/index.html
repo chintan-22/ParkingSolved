@@ -520,6 +520,7 @@
             NEARBY_RADIUS_MILES: 5,
             NEARBY_RADIUS_METERS: 8047,
             PARKING_SEARCH_RADII_METERS: [2500, 5000, 8047],
+            OVERPASS_REQUEST_TIMEOUT_MS: 12000,
             UPDATE_INTERVAL: 5000, // 5 seconds
         };
 
@@ -794,32 +795,20 @@
 
             for (const radius of CONFIG.PARKING_SEARCH_RADII_METERS) {
                 const query = createParkingOverpassQuery(location, radius);
-
-                for (const endpoint of CONFIG.OVERPASS_URLS) {
-                    try {
-                        const response = await fetch(endpoint, {
-                            method: 'POST',
-                            body: new URLSearchParams({ data: query }),
-                        });
-
-                        if (!response.ok) {
-                            throw new Error(`${endpoint} returned ${response.status}`);
-                        }
-
-                        const contentType = response.headers.get('content-type') || '';
-                        if (!contentType.includes('application/json')) {
-                            const text = await response.text();
-                            throw new Error(`${endpoint} returned non-JSON response: ${text.slice(0, 80)}`);
-                        }
-
-                        const data = await response.json();
+                const parallelEndpointRequests = CONFIG.OVERPASS_URLS.map(endpoint => {
+                    return fetchParkingFromEndpoint(endpoint, query).then(data => {
                         if (data.elements?.length) {
                             return data;
                         }
-                    } catch (error) {
-                        console.warn('Parking search endpoint failed:', error);
-                        errors.push(error);
-                    }
+                        throw new Error(`${endpoint} returned no parking results at ${radius}m`);
+                    });
+                });
+
+                try {
+                    return await Promise.any(parallelEndpointRequests);
+                } catch (error) {
+                    console.warn(`No parking results at ${radius}m radius`, error);
+                    errors.push(error);
                 }
             }
 
@@ -828,6 +817,33 @@
             }
 
             return { elements: [] };
+        }
+
+        async function fetchParkingFromEndpoint(endpoint, query) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), CONFIG.OVERPASS_REQUEST_TIMEOUT_MS);
+
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    body: new URLSearchParams({ data: query }),
+                    signal: controller.signal,
+                });
+
+                if (!response.ok) {
+                    throw new Error(`${endpoint} returned ${response.status}`);
+                }
+
+                const contentType = response.headers.get('content-type') || '';
+                if (!contentType.includes('application/json')) {
+                    const text = await response.text();
+                    throw new Error(`${endpoint} returned non-JSON response: ${text.slice(0, 80)}`);
+                }
+
+                return await response.json();
+            } finally {
+                clearTimeout(timeoutId);
+            }
         }
 
         function createParkingOverpassQuery(location, radius) {
