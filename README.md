@@ -2,7 +2,7 @@
 
 ParkingSolved is a smart parking availability prototype. It combines a map-based user interface, destination search, nearby parking discovery, estimated parking availability, and a sensor-ready backend for live occupancy updates.
 
-The current frontend uses **MapLibre GL JS** with **OpenFreeMap** tiles, so it does not require a Google Maps API key. Destination search uses OpenStreetMap/Nominatim, and nearby parking discovery uses OpenStreetMap/Overpass.
+The current frontend uses **MapLibre GL JS** with **OpenFreeMap** tiles, so it does not require a Google Maps API key. Destination search uses OpenStreetMap/Nominatim, and nearby parking discovery uses a fast bounded Nominatim parking search plus Overpass API fallbacks.
 
 ## Current Status
 
@@ -98,7 +98,7 @@ The browser must be able to load:
 - MapLibre GL JS from `unpkg.com`
 - OpenFreeMap tiles from `tiles.openfreemap.org`
 - Nominatim search from `nominatim.openstreetmap.org`
-- Overpass parking data from `overpass-api.de`
+- Nominatim and Overpass parking data
 
 ### Start the App
 
@@ -257,8 +257,8 @@ It uses:
 
 - MapLibre GL JS for the map
 - OpenFreeMap for vector tiles
-- Nominatim for destination geocoding
-- Overpass API for parking-lot discovery
+- Nominatim for destination geocoding and fast bounded parking search
+- Overpass API mirrors for broader parking-lot discovery
 - browser geolocation for current location
 - WebSocket connection to the backend for live updates
 
@@ -284,7 +284,7 @@ const CONFIG = {
 };
 ```
 
-Parking discovery queries all configured Overpass mirrors and search radii in parallel, then uses the first request that returns parking results. Results are cached by approximate coordinates so repeated searches near the same destination are faster.
+Parking discovery races fast bounded Nominatim parking searches against all configured Overpass mirrors and search radii. The first source that returns parking results wins. Results are cached by approximate coordinates so repeated searches near the same destination are faster.
 
 ## Backend API
 
@@ -422,7 +422,7 @@ Nominatim geocodes destination
       ↓
 MapLibre centers map
       ↓
-Overpass finds mapped parking lots nearby
+Nominatim/Overpass find mapped parking lots nearby
       ↓
 Frontend estimates availability when live data is unavailable
       ↓
@@ -534,7 +534,7 @@ The app searches OpenStreetMap parking data within 5 miles of the destination.
 If no parking appears, it may mean:
 
 - OpenStreetMap has no mapped parking lots nearby
-- Overpass is temporarily slow or unavailable
+- public Nominatim or Overpass services are temporarily slow or unavailable
 - the destination is too vague
 - the search radius is too small
 

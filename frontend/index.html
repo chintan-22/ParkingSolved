@@ -506,6 +506,7 @@
             API_BASE_URL: IS_LOCAL_HOST ? 'http://localhost:8000' : '',
             WS_URL: IS_LOCAL_HOST ? 'ws://localhost:8000/ws/lots/live' : null,
             MAP_STYLE_URL: 'https://tiles.openfreemap.org/styles/liberty',
+            NOMINATIM_SEARCH_URL: 'https://nominatim.openstreetmap.org/search',
             OVERPASS_URLS: [
                 'https://overpass-api.de/api/interpreter',
                 'https://overpass.kumi.systems/api/interpreter',
@@ -521,6 +522,7 @@
             NEARBY_RADIUS_METERS: 8047,
             PARKING_SEARCH_RADII_METERS: [2500, 5000, 8047],
             OVERPASS_REQUEST_TIMEOUT_MS: 8000,
+            PARKING_SEARCH_LIMIT: 30,
             UPDATE_INTERVAL: 5000, // 5 seconds
         };
 
@@ -541,6 +543,7 @@
         let websocket = null;
         let activeSearchId = 0;
         const parkingSearchCache = new Map();
+        const destinationSearchCache = new Map();
 
         const statusIcons = {
             green: `<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -718,6 +721,12 @@
         }
 
         async function geocodeDestination(destination) {
+            const cacheKey = destination.toLowerCase();
+            const cachedDestination = destinationSearchCache.get(cacheKey);
+            if (cachedDestination) {
+                return cachedDestination;
+            }
+
             const params = new URLSearchParams({
                 format: 'json',
                 limit: '1',
@@ -740,11 +749,14 @@
                 throw new Error('No destination results');
             }
 
-            return {
+            const result = {
                 lat: parseFloat(results[0].lat),
                 lng: parseFloat(results[0].lon),
                 label: results[0].display_name,
             };
+            destinationSearchCache.set(cacheKey, result);
+
+            return result;
         }
 
         function addDestinationMarker(location) {
@@ -808,7 +820,7 @@
                 return cachedResult;
             }
 
-            const requests = CONFIG.PARKING_SEARCH_RADII_METERS.flatMap(radius => {
+            const overpassRequests = CONFIG.PARKING_SEARCH_RADII_METERS.flatMap(radius => {
                 const query = createParkingOverpassQuery(location, radius);
                 return CONFIG.OVERPASS_URLS.map(endpoint => {
                     return fetchParkingFromEndpoint(endpoint, query).then(data => {
@@ -819,9 +831,17 @@
                     });
                 });
             });
+            const quickSearchRequests = CONFIG.PARKING_SEARCH_RADII_METERS.map(radius => {
+                return fetchParkingFromNominatim(location, radius).then(data => {
+                    if (data.elements?.length) {
+                        return data;
+                    }
+                    throw new Error(`Nominatim returned no parking results at ${radius}m`);
+                });
+            });
 
             try {
-                const data = await Promise.any(requests);
+                const data = await Promise.any([...quickSearchRequests, ...overpassRequests]);
                 parkingSearchCache.set(cacheKey, data);
                 return data;
             } catch (error) {
@@ -832,6 +852,62 @@
 
         function getParkingCacheKey(location) {
             return `${Number(location.lat).toFixed(3)},${Number(location.lng).toFixed(3)}`;
+        }
+
+        async function fetchParkingFromNominatim(location, radius) {
+            const params = new URLSearchParams({
+                format: 'json',
+                limit: String(CONFIG.PARKING_SEARCH_LIMIT),
+                q: 'parking',
+                bounded: '1',
+                viewbox: createSearchViewbox(location, radius),
+            });
+
+            const response = await fetch(`${CONFIG.NOMINATIM_SEARCH_URL}?${params.toString()}`, {
+                headers: {
+                    Accept: 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error(`Nominatim parking search returned ${response.status}`);
+            }
+
+            const results = await response.json();
+            const elements = results
+                .filter(result => result.class === 'amenity' && result.type === 'parking')
+                .map(result => createElementFromNominatimResult(result));
+
+            return { elements };
+        }
+
+        function createSearchViewbox(location, radiusMeters) {
+            const latDelta = radiusMeters / 111320;
+            const lngDelta = radiusMeters / (111320 * Math.cos(toRadians(location.lat)));
+            const west = location.lng - lngDelta;
+            const east = location.lng + lngDelta;
+            const north = location.lat + latDelta;
+            const south = location.lat - latDelta;
+
+            return `${west},${north},${east},${south}`;
+        }
+
+        function createElementFromNominatimResult(result) {
+            const displayParts = (result.display_name || '').split(',').map(part => part.trim());
+            const name = result.name || displayParts[0] || 'Mapped Parking Lot';
+
+            return {
+                type: result.osm_type || 'place',
+                id: result.osm_id || result.place_id,
+                lat: parseFloat(result.lat),
+                lon: parseFloat(result.lon),
+                tags: {
+                    amenity: 'parking',
+                    name,
+                    source: 'OpenStreetMap Search',
+                    display_name: result.display_name,
+                },
+            };
         }
 
         async function fetchParkingFromEndpoint(endpoint, query) {
@@ -908,7 +984,7 @@
                 status,
                 fill_percentage: fillPercentage,
                 last_updated: new Date().toISOString(),
-                source: 'OpenStreetMap',
+                source: tags.source || 'OpenStreetMap',
                 estimated: !Number.isFinite(rawCapacity) || rawCapacity <= 0,
             };
         }
@@ -946,6 +1022,10 @@
         }
 
         function formatOsmAddress(tags, location) {
+            if (tags.display_name) {
+                return tags.display_name;
+            }
+
             const addressParts = [
                 tags['addr:housenumber'],
                 tags['addr:street'],
